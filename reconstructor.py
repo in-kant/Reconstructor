@@ -26,7 +26,7 @@ ncore = psutil.cpu_count()
 print('Reconstructor V1.31')
 print('Found {} CPU cores available'.format(ncore))
 
-debug = False#True #(of 2 for even more print outputs)
+debug = True#False#True #(of 2 for even more print outputs)
 
 for a in ark:
     if 'num_gridx' in ark[a]:
@@ -377,11 +377,15 @@ def grad(img):
 def select_data_file(autoload):
     """trying to load everything from a DxChange file or at least a dataset from an h5 file (or also tiff in the future?)
     """
+    global tori, last_saved_path, tomo, flat, dark, theta, theta_from_file, i0_data
     if autoload == True:
         print('loading from tori')
     else:
         autoload = False
-    global tori, last_saved_path, tomo, flat, dark, theta, theta_from_file, i0_data
+        tori['file_definitions']['dark_file'] = ''
+        tori['file_definitions']['dark_path'] = 'exchange/data_dark'
+        tori['file_definitions']['flat_file'] = ''
+        tori['file_definitions']['flat_path'] = 'exchange/data_white'
     if not autoload:
         filename = QtWidgets.QFileDialog.getOpenFileName(MainWindow, 'Open DxChange file', last_saved_path, "h5 files (*.h5)")
         if filename[0]=='':
@@ -634,10 +638,15 @@ def load_3d_data(filename, h5path, myslices):
         return
     try:
         h5dataset = f[h5path]
+        shape_of_the_data = h5dataset.shape
     except:
         print('dataset is not in the file or corrupted')
+        f.close()
         return
     starttime = time.time()
+    #parce slices
+    if myslices[0].stop is None:
+        myslices[0] = slice(myslices[0].start, shape_of_the_data[0], myslices[0].step)
     try: #loading full dataset in 20 chunks
         chunksize = len(np.arange(myslices[0].start, min(x for x in [myslices[0].stop, h5dataset.shape[0]] if x is not None))) #chunk size in binned data, float!
         if chunksize <= 100: #do in a single go
@@ -676,7 +685,9 @@ def load_3d_data(filename, h5path, myslices):
         msg.show()
         retval = msg.exec_()
         unblock_gui()
+        f.close()
         return
+    f.close()
     return dataset
 
 def theta_mask():
@@ -1585,9 +1596,15 @@ def image_source_changed():
     ui.excl_reg_01_from_spin.setMaximum(tomo.shape[0])
     ui.excl_reg_02_from_spin.setMaximum(tomo.shape[0])
     ui.excl_reg_03_from_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_04_from_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_05_from_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_06_from_spin.setMaximum(tomo.shape[0])
     ui.excl_reg_01_to_spin.setMaximum(tomo.shape[0])
     ui.excl_reg_02_to_spin.setMaximum(tomo.shape[0])
     ui.excl_reg_03_to_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_04_to_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_05_to_spin.setMaximum(tomo.shape[0])
+    ui.excl_reg_06_to_spin.setMaximum(tomo.shape[0])
     plot_slider_update()
     ui.silx_plot.resetZoom()
 
@@ -2989,6 +3006,10 @@ def conv_360_180():
         direction = 'left'
         overlap = 2*int(CoR)
     print('direction = {}, overlap = {} px'.format(direction, overlap))
+    angles = theta % 360
+    proj_order = angles.argsort()
+    theta = theta[proj_order]
+    tomo = tomo[proj_order]
     tomo = tomopy.misc.morph.sino_360_to_180(tomo,overlap=overlap,rotation=direction)
     reset_interface()
     theta = tomopy.angles(tomo.shape[0]+1)[:-1]
@@ -3019,7 +3040,7 @@ def save_cur_proj():
 
 def save_tori(fname):
     global last_saved_path, tori
-    torpath = last_saved_path.split('raw')[0]+'process/recon/tori/'
+    torpath = last_saved_path.split('raw')[0]+'process/recon_pipeline/tori/'
     if not os.path.isdir(torpath):
         os.makedirs(torpath)
     if not fname:
@@ -3044,7 +3065,7 @@ def load_tori():
     loads (and optionally executes) an existing tori file
     '''
     global last_saved_path, tori, stripe_arguments
-    torpath = last_saved_path.split('raw')[0]+'process/tori/'
+    torpath = last_saved_path.split('raw')[0]+'process/recon_pipeline/tori'
     filename = QtWidgets.QFileDialog.getOpenFileName(MainWindow, 'Open tori parameter file', torpath, "tori files (*.tori)")
     if filename[0]=='':
         print('no file specified')
